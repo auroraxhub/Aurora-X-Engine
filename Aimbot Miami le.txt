@@ -1,0 +1,627 @@
+--[[
+    EXTRACCIÓN COMPLETA DE AIMBOTS (RJR.lua.txt) + INTERFAZ RAYFIELD
+    Incluye: Silent Aim M1, Silent Aim Skills, FOV, Línea, Selección de objetivo, Lock Hotkey (H)
+]]
+
+-- 1. CARGAR RAYFIELD
+local Rayfield
+local success, err = pcall(function()
+    Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
+end)
+
+if not success or not Rayfield then
+    -- Fallback si la URL de Rayfield falla
+    Rayfield = loadstring(game:HttpGet("https://raw.githubusercontent.com/SharkHeist/Rayfield/main/source.lua"))()
+end
+
+-- 2. CREAR VENTANA
+local Window = Rayfield:CreateWindow({
+    Name = "Aimbot Suite",
+    Icon = 0,
+    LoadingTitle = "Cargando Aimbots...",
+    LoadingSubtitle = "by kismile",
+    ConfigurationSaving = { Enabled = false },
+    KeySystem = false
+})
+
+local MainTab = Window:CreateTab("Aimbot", 4483362458)
+
+-- 3. VARIABLES GLOBALES (igual que en el RJR original)
+_G.G_SilentAimM1R = false
+_G.G_SilentAimSkill = false
+_G.G_SilentAimShowFOV = false
+_G.G_SilentAimFOV = 150
+_G.G_SilentAimPart = "Head"
+_G.G_SilentAimTargetPlayers = true
+_G.G_SilentAimTargetMobs = true
+_G.G_SilentAimShowLine = false
+_G.G_SilentAimFOVMode = "跟随鼠标"
+_G.G_SilentAimTeamCheck = false
+_G.G_SilentAimMethod = "鼠标最近的玩家"
+_G.G_SilentAimSelectedPlayer = ""
+_G.G_LockHotkey = false
+_G.G_LockHotkeyMode = "锁人1"
+_G.FOVMode = "跟随鼠标"
+
+-- 4. UI - Sección: Configuración Silent Aim
+local AimSection = MainTab:CreateSection("Silent Aim")
+
+AimSection:CreateToggle({
+    Name = "M1 R Silent Aim",
+    CurrentValue = false,
+    Flag = "SilentAimM1R",
+    Callback = function(v) _G.G_SilentAimM1R = v end
+})
+
+AimSection:CreateToggle({
+    Name = "Skill Silent Aim",
+    CurrentValue = false,
+    Flag = "SilentAimSkill",
+    Callback = function(v) _G.G_SilentAimSkill = v end
+})
+
+AimSection:CreateDivider()
+
+-- 5. UI - Sección: Visuales (FOV y Línea)
+local VisualSection = MainTab:CreateSection("Visuales")
+
+VisualSection:CreateToggle({
+    Name = "Mostrar FOV",
+    CurrentValue = false,
+    Flag = "ShowFOV",
+    Callback = function(v)
+        _G.G_SilentAimShowFOV = v
+        if fovCircle then fovCircle.Visible = v end
+    end
+})
+
+VisualSection:CreateToggle({
+    Name = "Mostrar Línea de bloqueo",
+    CurrentValue = false,
+    Flag = "ShowLine",
+    Callback = function(v)
+        _G.G_SilentAimShowLine = v
+        if lineDraw then lineDraw.Visible = v end
+    end
+})
+
+VisualSection:CreateDropdown({
+    Name = "Posición del FOV",
+    Options = {"跟随鼠标", "屏幕中心"},
+    CurrentOption = "跟随鼠标",
+    Flag = "FOVMode",
+    Callback = function(v)
+        _G.G_SilentAimFOVMode = v
+        _G.FOVMode = v
+    end
+})
+
+VisualSection:CreateSlider({
+    Name = "Radio del FOV",
+    Range = {10, 1500},
+    Increment = 1,
+    CurrentValue = 150,
+    Flag = "FOVRadius",
+    Callback = function(v)
+        _G.G_SilentAimFOV = v
+        if fovCircle then fovCircle.Radius = v end
+    end
+})
+
+VisualSection:CreateColorPicker({
+    Name = "Color del FOV",
+    Color = Color3.fromRGB(255, 0, 0),
+    Flag = "FOVColor",
+    Callback = function(v)
+        if fovCircle then fovCircle.Color = v end
+        if lineDraw then lineDraw.Color = v end
+    end
+})
+
+-- 6. UI - Sección: Objetivos
+local TargetSection = MainTab:CreateSection("Objetivos")
+
+TargetSection:CreateToggle({
+    Name = "Apuntar a Jugadores",
+    CurrentValue = true,
+    Flag = "TargetPlayers",
+    Callback = function(v) _G.G_SilentAimTargetPlayers = v end
+})
+
+TargetSection:CreateToggle({
+    Name = "Apuntar a NPCs",
+    CurrentValue = true,
+    Flag = "TargetMobs",
+    Callback = function(v) _G.G_SilentAimTargetMobs = v end
+})
+
+TargetSection:CreateToggle({
+    Name = "Team Check (evita aliados)",
+    CurrentValue = false,
+    Flag = "TeamCheck",
+    Callback = function(v) _G.G_SilentAimTeamCheck = v end
+})
+
+TargetSection:CreateDivider()
+
+TargetSection:CreateDropdown({
+    Name = "Parte del cuerpo",
+    Options = {"Head", "HumanoidRootPart", "UpperTorso", "LowerTorso", "Torso"},
+    CurrentOption = "Head",
+    Flag = "AimPart",
+    Callback = function(v) _G.G_SilentAimPart = v end
+})
+
+TargetSection:CreateDropdown({
+    Name = "Método de selección",
+    Options = {"鼠标最近的玩家", "最近的玩家", "选择玩家"},
+    CurrentOption = "鼠标最近的玩家",
+    Flag = "AimMethod",
+    Callback = function(v) _G.G_SilentAimMethod = v end
+})
+
+-- Dropdown de selección de jugador (se actualiza dinámicamente)
+local function GetPlayerList()
+    local list = {}
+    for _, plr in pairs(game:GetService("Players"):GetPlayers()) do
+        if plr ~= game:GetService("Players").LocalPlayer then
+            table.insert(list, plr.Name)
+        end
+    end
+    table.sort(list)
+    return list
+end
+
+local selectedPlayerDropdown = TargetSection:CreateDropdown({
+    Name = "Seleccionar jugador (para método '选择玩家')",
+    Options = GetPlayerList(),
+    CurrentOption = "",
+    Flag = "SelectedPlayer",
+    Callback = function(v)
+        _G.G_SilentAimSelectedPlayer = v or ""
+    end
+})
+
+TargetSection:CreateButton({
+    Name = "Refrescar lista de jugadores",
+    Callback = function()
+        local newList = GetPlayerList()
+        selectedPlayerDropdown:Refresh(newList, true)
+    end
+})
+
+-- 7. UI - Sección: Lock Hotkey (Tecla H)
+local HotkeySection = MainTab:CreateSection("Lock por Tecla (H)")
+
+HotkeySection:CreateToggle({
+    Name = "Activar Lock Hotkey (H)",
+    CurrentValue = false,
+    Flag = "LockHotkey",
+    Callback = function(v)
+        _G.G_LockHotkey = v
+        if v then StartLockHotkey() else StopLockHotkey() end
+    end
+})
+
+HotkeySection:CreateDropdown({
+    Name = "Modo de Lock",
+    Options = {"锁人1", "锁人2"},
+    CurrentOption = "锁人1",
+    Flag = "LockMode",
+    Callback = function(v) _G.G_LockHotkeyMode = v end
+})
+
+-- ==================== LÓGICA DE AIMBOT (extraída del RJR) ====================
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UIS = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local LocalPlayer = Players.LocalPlayer
+
+-- Funciones auxiliares
+local function IsAlive(character)
+    if not character then return false end
+    local hum = character:FindFirstChildOfClass("Humanoid")
+    return hum and hum.Health > 0
+end
+
+local function IsSilentAimAlly(player)
+    local main = LocalPlayer:FindFirstChild("PlayerGui") and LocalPlayer.PlayerGui:FindFirstChild("Main")
+    local frame = main and main:FindFirstChild("Allies") and main.Allies:FindFirstChild("Container")
+        and main.Allies.Container:FindFirstChild("Allies") and main.Allies.Container.Allies:FindFirstChild("ScrollingFrame")
+        and main.Allies.Container.Allies.ScrollingFrame:FindFirstChild("Frame")
+    if not frame then return false end
+    return frame:FindFirstChild(player.Name) ~= nil
+end
+
+local function IsSilentAimEnemy(player)
+    if not player or player == LocalPlayer then return false end
+    if IsSilentAimAlly(player) then return false end
+    local myTeam, targetTeam = LocalPlayer.Team, player.Team
+    if myTeam and targetTeam and myTeam.Name == "Marines" and targetTeam.Name == "Marines" then
+        return false
+    end
+    return true
+end
+
+local function GetSilentAimOrigin()
+    local p = UIS:GetMouseLocation()
+    if _G.FOVMode == "屏幕中心" or p.X <= 0 or p.Y <= 0 then
+        local v = workspace.CurrentCamera.ViewportSize
+        return Vector2.new(v.X / 2, v.Y / 2)
+    end
+    return p
+end
+
+-- Obtener el objetivo actual
+local currentSilentAimTarget = nil
+
+local function GetClosestTargetToMouse()
+    local method = _G.G_SilentAimMethod or "鼠标最近的玩家"
+
+    -- Método: Seleccionar jugador específico
+    if method == "选择玩家" then
+        if not _G.G_SilentAimTargetPlayers then return nil end
+        local name = _G.G_SilentAimSelectedPlayer
+        if not name or name == "" then return nil end
+        local player = Players:FindFirstChild(name)
+        if not player or player == LocalPlayer then return nil end
+        if _G.G_SilentAimTeamCheck and not IsSilentAimEnemy(player) then return nil end
+        local character = player.Character
+        if not IsAlive(character) then return nil end
+        return character:FindFirstChild(_G.G_SilentAimPart) or character:FindFirstChild("HumanoidRootPart")
+    end
+
+    -- Método: Jugador más cercano (3D)
+    if method == "最近的玩家" then
+        local myChar = LocalPlayer.Character
+        local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+        if not myRoot then return nil end
+        local closest, shortest = nil, math.huge
+        local myPos = myRoot.Position
+
+        local function checkNearest(character)
+            if not IsAlive(character) then return end
+            local part = character:FindFirstChild(_G.G_SilentAimPart) or character:FindFirstChild("HumanoidRootPart")
+            if not part then return end
+            local d = (part.Position - myPos).Magnitude
+            if d < shortest then closest, shortest = part, d end
+        end
+
+        if _G.G_SilentAimTargetPlayers then
+            for _, player in ipairs(Players:GetPlayers()) do
+                if player ~= LocalPlayer then
+                    if not _G.G_SilentAimTeamCheck or IsSilentAimEnemy(player) then
+                        checkNearest(player.Character)
+                    end
+                end
+            end
+        end
+        if _G.G_SilentAimTargetMobs and Workspace:FindFirstChild("Enemies") then
+            for _, enemy in ipairs(Workspace.Enemies:GetChildren()) do
+                checkNearest(enemy)
+            end
+        end
+        return closest
+    end
+
+    -- Método: Más cercano al mouse (por defecto)
+    local origin = GetSilentAimOrigin()
+    local closest, shortest = nil, _G.G_SilentAimFOV or 150
+
+    local function check(character)
+        if not IsAlive(character) then return end
+        local part = character:FindFirstChild(_G.G_SilentAimPart) or character:FindFirstChild("HumanoidRootPart")
+        if not part then return end
+        local pos, onScreen = workspace.CurrentCamera:WorldToViewportPoint(part.Position)
+        if onScreen then
+            local dist = (Vector2.new(pos.X, pos.Y) - origin).Magnitude
+            if dist < shortest then closest, shortest = part, dist end
+        end
+    end
+
+    if _G.G_SilentAimTargetPlayers then
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer then
+                if not _G.G_SilentAimTeamCheck or IsSilentAimEnemy(player) then
+                    check(player.Character)
+                end
+            end
+        end
+    end
+    if _G.G_SilentAimTargetMobs and Workspace:FindFirstChild("Enemies") then
+        for _, enemy in ipairs(Workspace.Enemies:GetChildren()) do
+            check(enemy)
+        end
+    end
+    return closest
+end
+
+-- ==================== DRAWING (FOV y LÍNEA) ====================
+local fovCircle = Drawing.new("Circle")
+fovCircle.Visible = false
+fovCircle.Color = Color3.fromRGB(255, 0, 0)
+fovCircle.Radius = _G.G_SilentAimFOV or 150
+fovCircle.Thickness = 2
+fovCircle.Filled = false
+
+local lineDraw = Drawing.new("Line")
+lineDraw.Thickness = 2
+lineDraw.Color = Color3.fromRGB(255, 0, 0)
+lineDraw.Transparency = 1
+lineDraw.Visible = false
+
+-- Actualizar dibujos en cada frame
+task.spawn(function()
+    RunService.RenderStepped:Connect(function()
+        -- Actualizar posición del FOV
+        if fovCircle.Visible then
+            local p
+            if _G.FOVMode == "屏幕中心" then
+                local v = workspace.CurrentCamera.ViewportSize
+                p = Vector2.new(v.X / 2, v.Y / 2)
+            else
+                p = UIS:GetMouseLocation()
+                if p.X <= 0 or p.Y <= 0 then
+                    local v = workspace.CurrentCamera.ViewportSize
+                    p = Vector2.new(v.X / 2, v.Y / 2)
+                end
+            end
+            fovCircle.Position = p
+        end
+
+        -- Actualizar objetivo actual
+        if _G.G_SilentAimM1R or _G.G_SilentAimSkill then
+            currentSilentAimTarget = GetClosestTargetToMouse()
+        else
+            currentSilentAimTarget = nil
+        end
+
+        -- Actualizar línea
+        if _G.G_SilentAimShowLine and currentSilentAimTarget then
+            local pos, onScreen = workspace.CurrentCamera:WorldToViewportPoint(currentSilentAimTarget.Position)
+            if onScreen then
+                lineDraw.Visible = true
+                local origin = GetSilentAimOrigin()
+                lineDraw.From = origin
+                lineDraw.To = Vector2.new(pos.X, pos.Y)
+            else
+                lineDraw.Visible = false
+            end
+        else
+            lineDraw.Visible = false
+        end
+    end)
+end)
+
+-- ==================== HOOK PARA M1 R (SILENT AIM) ====================
+local mouse = LocalPlayer:GetMouse()
+local oldIndex
+pcall(function()
+    oldIndex = hookmetamethod(game, "__index", function(self, key)
+        if _G.G_SilentAimM1R and currentSilentAimTarget and not checkcaller() and self == mouse then
+            local tp = currentSilentAimTarget.Position
+            local cp = workspace.CurrentCamera.CFrame.Position
+            if key == "Hit" then return CFrame.new(tp)
+            elseif key == "Target" then return currentSilentAimTarget
+            elseif key == "UnitRay" then return Ray.new(cp, (tp - cp).Unit)
+            elseif key == "Origin" then return cp
+            elseif key == "Direction" then return (tp - cp).Unit
+            end
+        end
+        return oldIndex(self, key)
+    end)
+end)
+
+-- ==================== HOOK PARA SKILLS (SILENT AIM) ====================
+local mt = getrawmetatable(game)
+local oldNamecall = mt.__namecall
+setreadonly(mt, false)
+mt.__namecall = newcclosure(function(self, ...)
+    local method = getnamecallmethod()
+    local args = {...}
+    if _G.G_SilentAimSkill and currentSilentAimTarget and (method == "FireServer" or method == "InvokeServer") then
+        local sName = tostring(self)
+        if sName == "RemoteEvent" or sName == "CommE" or sName == "RemoteFunction" then
+            for i, v in pairs(args) do
+                if typeof(v) == "Vector3" then
+                    args[i] = currentSilentAimTarget.Position
+                end
+            end
+            return oldNamecall(self, unpack(args))
+        end
+    end
+    return oldNamecall(self, ...)
+end)
+setreadonly(mt, true)
+
+-- ==================== LOCK HOTKEY (TECLA H) ====================
+local LockHotkeyLabel
+local LockHotkeyConn
+local LockHotkeyLoopConn
+local lockHotkeyActive = false
+local lockHotkeyTarget = nil
+local Lock2EntranceTick = 0
+
+local function LockHotkeyUpdateUI()
+    if LockHotkeyLabel then
+        if lockHotkeyActive and lockHotkeyTarget then
+            LockHotkeyLabel.Text = "🔒 Bloqueando: " .. lockHotkeyTarget.Name
+            LockHotkeyLabel.Visible = true
+        elseif lockHotkeyActive then
+            LockHotkeyLabel.Text = "🔒 Bloqueando..."
+            LockHotkeyLabel.Visible = true
+        else
+            LockHotkeyLabel.Visible = false
+        end
+    end
+end
+
+local function StopTween()
+    -- Función vacía para compatibilidad (la original usa tweens, aquí no es necesario pero lo dejamos)
+end
+
+local function requestEntrance(pos)
+    local args = { "requestEntrance", pos }
+    pcall(function()
+        game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer(unpack(args))
+    end)
+end
+
+local function GetPredictedCFrame(hrp)
+    -- Simulación simple de predicción (igual que en el original)
+    local velocity = hrp.AssemblyLinearVelocity
+    if velocity.Magnitude < 0.1 then velocity = hrp.Velocity end
+    local amount = 0.08 + velocity.Magnitude * 0.0016
+    if amount > 0.5 then amount = 0.5 end
+    return CFrame.new(hrp.Position + velocity * amount) * (hrp.CFrame - hrp.CFrame.Position)
+end
+
+local function topos(CF)
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if hrp then hrp.CFrame = CF end
+end
+
+local function LockHotkeyStartLoop()
+    lockHotkeyTarget = nil
+    local firstTarget = GetClosestTargetToMouse()
+    if firstTarget then
+        local tc = firstTarget.Parent
+        if tc and tc:IsA("Model") then
+            lockHotkeyTarget = Players:GetPlayerFromCharacter(tc)
+        end
+    end
+    if not lockHotkeyTarget then return end
+
+    if LockHotkeyLoopConn then
+        LockHotkeyLoopConn:Disconnect()
+        LockHotkeyLoopConn = nil
+    end
+
+    lockHotkeyActive = true
+    LockHotkeyUpdateUI()
+    Lock2EntranceTick = 0
+    local VirtualUser = game:GetService("VirtualUser")
+
+    LockHotkeyLoopConn = RunService.Stepped:Connect(function()
+        if not lockHotkeyActive then
+            if LockHotkeyLoopConn then
+                LockHotkeyLoopConn:Disconnect()
+                LockHotkeyLoopConn = nil
+            end
+            return
+        end
+
+        pcall(function()
+            local tPlayer = lockHotkeyTarget
+            if not tPlayer or not tPlayer.Character then
+                LockHotkeyStopLoop()
+                return
+            end
+            local tHRP = tPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if not tHRP then return end
+            local myChar = LocalPlayer.Character
+            local myHRP = myChar and myChar:FindFirstChild("HumanoidRootPart")
+            if not myHRP then return end
+
+            local targetCFrame = GetPredictedCFrame(tHRP)
+
+            if _G.G_LockHotkeyMode == "锁人2" then
+                local targetPos = targetCFrame.Position
+                local myPos = myHRP.Position
+                local distance = (targetPos - myPos).Magnitude
+
+                if math.abs(myPos.Y - targetPos.Y) > 0.5 then
+                    myHRP.CFrame = CFrame.new(myPos.X, targetPos.Y, myPos.Z)
+                end
+
+                if distance > 1000 and tick() - Lock2EntranceTick > 3 then
+                    local entName, entPos = nil, nil
+                    -- Aquí se podría añadir lógica de puntos de entrada, pero la dejamos simple
+                    if entName and entPos then
+                        requestEntrance(entPos)
+                        Lock2EntranceTick = tick()
+                        return
+                    end
+                end
+                if distance > 300 then
+                    topos(targetCFrame)
+                else
+                    StopTween()
+                    myHRP.CFrame = targetCFrame
+                end
+            else
+                myHRP.CFrame = targetCFrame
+                VirtualUser:CaptureController()
+                VirtualUser:Button1Down(Vector2.new(1280, 672))
+            end
+        end)
+    end)
+end
+
+local function LockHotkeyStopLoop()
+    lockHotkeyActive = false
+    if LockHotkeyLoopConn then
+        LockHotkeyLoopConn:Disconnect()
+        LockHotkeyLoopConn = nil
+    end
+    StopTween()
+    lockHotkeyTarget = nil
+    LockHotkeyUpdateUI()
+end
+
+function StartLockHotkey()
+    if LockHotkeyConn then return end
+
+    pcall(function()
+        local old = LocalPlayer:FindFirstChild("PlayerGui") and LocalPlayer.PlayerGui:FindFirstChild("LockHotkeyGui")
+        if old then old:Destroy() end
+    end)
+    pcall(function()
+        local old = game:GetService("CoreGui"):FindFirstChild("LockHotkeyGui")
+        if old then old:Destroy() end
+    end)
+    if not LockHotkeyLabel then
+        local sgui = Instance.new("ScreenGui")
+        sgui.Name = "LockHotkeyGui"
+        sgui.Parent = LocalPlayer:FindFirstChild("PlayerGui") or game:GetService("CoreGui")
+        LockHotkeyLabel = Instance.new("TextLabel")
+        LockHotkeyLabel.Parent = sgui
+        LockHotkeyLabel.AnchorPoint = Vector2.new(0.5, 0)
+        LockHotkeyLabel.Position = UDim2.new(0.5, 0, 0, 5)
+        LockHotkeyLabel.Size = UDim2.new(0, 300, 0, 30)
+        LockHotkeyLabel.BackgroundTransparency = 1
+        LockHotkeyLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
+        LockHotkeyLabel.TextStrokeTransparency = 0
+        LockHotkeyLabel.Font = Enum.Font.SourceSansBold
+        LockHotkeyLabel.TextSize = 20
+    end
+
+    LockHotkeyConn = UIS.InputBegan:Connect(function(input, gameProcessed)
+        if not _G.G_LockHotkey then return end
+        if gameProcessed then return end
+        if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+        if input.KeyCode.Name ~= "H" then return end
+        if lockHotkeyActive then
+            LockHotkeyStopLoop()
+        else
+            LockHotkeyStartLoop()
+        end
+    end)
+end
+
+function StopLockHotkey()
+    LockHotkeyStopLoop()
+    if LockHotkeyConn then
+        LockHotkeyConn:Disconnect()
+        LockHotkeyConn = nil
+    end
+    if LockHotkeyLabel then
+        LockHotkeyLabel.Visible = false
+    end
+end
+
+print("✅ Todos los aimbots cargados. Usa la interfaz Rayfield para controlarlos.")
