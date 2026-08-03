@@ -1,0 +1,308 @@
+if not game:IsLoaded() then game.Loaded:Wait() end
+
+--------------------------------------------------
+-- SERVICES
+--------------------------------------------------
+local UIS = game:GetService("UserInputService")
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local player = Players.LocalPlayer
+local camera = workspace.CurrentCamera
+local pGui = player:WaitForChild("PlayerGui")
+
+-- CONFIG
+_G.SilentAim_Player = false
+_G.SilentAim_NPC = false
+_G.CamLock_Player = false
+_G.CamLock_NPC = false
+_G.FastAttack = false
+_G.HitboxExpander = false
+_G.PlayerESP = false
+_G.WalkOnWater = false
+_G.CamLock_Active = false
+_G.currentSpeed = 100 
+
+local PREDICTION_STRENGTH = 0.165 
+local SMOOTHNESS = 0.15 
+local CurrentTarget = nil
+local LockEnabled = false
+
+--------------------------------------------------
+-- UI CONSTRUCTION (TAB SYSTEM)
+--------------------------------------------------
+local sg = Instance.new("ScreenGui", pGui)
+sg.Name = "TeamEx_V4_1"
+sg.ResetOnSpawn = false
+
+-- Floating Main Toggle
+local togBtn = Instance.new("ImageButton", sg)
+togBtn.Size = UDim2.new(0, 50, 0, 50)
+togBtn.Position = UDim2.new(0.05, 0, 0.2, 0)
+togBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+togBtn.Image = "rbxassetid://6031104667"
+Instance.new("UICorner", togBtn).CornerRadius = UDim.new(1, 0)
+
+-- Camlock Screen Button
+local camBtn = Instance.new("TextButton", sg)
+camBtn.Size = UDim2.new(0, 65, 0, 65)
+camBtn.Position = UDim2.new(0.85, 0, 0.45, 0)
+camBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+camBtn.Text = "LOCK"
+camBtn.TextColor3 = Color3.new(1, 1, 1)
+camBtn.Visible = false
+camBtn.Font = Enum.Font.GothamBold
+Instance.new("UICorner", camBtn).CornerRadius = UDim.new(1, 0)
+
+-- Main Menu
+local main = Instance.new("Frame", sg)
+main.Size = UDim2.new(0, 340, 0, 260)
+main.Position = UDim2.new(0.5, -170, 0.4, -130)
+main.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+Instance.new("UICorner", main)
+
+-- Tab Navigation
+local tabHolder = Instance.new("Frame", main)
+tabHolder.Size = UDim2.new(0, 80, 1, 0)
+tabHolder.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
+Instance.new("UICorner", tabHolder)
+
+local container = Instance.new("Frame", main)
+container.Size = UDim2.new(1, -90, 1, -10)
+container.Position = UDim2.new(0, 85, 0, 5)
+container.BackgroundTransparency = 1
+
+local tabs = {}
+local function createTab(name, active)
+    local b = Instance.new("TextButton", tabHolder)
+    b.Size = UDim2.new(1, -10, 0, 35)
+    b.Position = UDim2.new(0, 5, 0, (#tabHolder:GetChildren()-1) * 40 + 10)
+    b.Text = name
+    b.Font = Enum.Font.GothamBold
+    b.TextSize = 11
+    b.BackgroundColor3 = active and Color3.fromRGB(50, 50, 50) or Color3.fromRGB(20, 20, 20)
+    b.TextColor3 = Color3.new(1,1,1)
+    Instance.new("UICorner", b)
+    
+    local p = Instance.new("ScrollingFrame", container)
+    p.Size = UDim2.new(1, 0, 1, 0)
+    p.BackgroundTransparency = 1
+    p.Visible = active
+    p.CanvasSize = UDim2.new(0,0,0,320)
+    p.ScrollBarThickness = 0
+    local layout = Instance.new("UIListLayout", p)
+    layout.Padding = UDim.new(0, 5)
+
+    b.Activated:Connect(function()
+        for _, v in pairs(tabs) do v.btn.BackgroundColor3 = Color3.fromRGB(20, 20, 20); v.page.Visible = false end
+        b.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+        p.Visible = true
+    end)
+    tabs[name] = {btn = b, page = p}
+    return p
+end
+
+local combatPage = createTab("COMBAT", true)
+local visualPage = createTab("VISUAL", false)
+local miscPage = createTab("MISC", false)
+local infoPage = createTab("INFO", false)
+
+local function createToggle(name, var, parent, callback)
+    local b = Instance.new("TextButton", parent)
+    b.Size = UDim2.new(1, 0, 0, 35)
+    b.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    b.Text = name .. ": OFF"
+    b.TextColor3 = Color3.fromRGB(255, 100, 100)
+    b.Font = Enum.Font.GothamBold
+    Instance.new("UICorner", b)
+    b.Activated:Connect(function()
+        _G[var] = not _G[var]
+        b.Text = name .. (_G[var] and ": ON" or ": OFF")
+        b.TextColor3 = _G[var] and Color3.fromRGB(100, 255, 100) or Color3.fromRGB(255, 100, 100)
+        if callback then callback(_G[var]) end
+    end)
+end
+
+-- INFO CONTENT
+local infoBox = Instance.new("TextLabel", infoPage)
+infoBox.Size = UDim2.new(1, 0, 0, 200)
+infoBox.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+infoBox.TextColor3 = Color3.new(1, 1, 1)
+infoBox.TextSize = 13
+infoBox.Font = Enum.Font.Gotham
+infoBox.TextWrapped = true
+infoBox.TextXAlignment = Enum.TextXAlignment.Left
+infoBox.TextYAlignment = Enum.TextYAlignment.Top
+infoBox.Text = "\n Welcome to TeamEx Blox Pvp Script\n\n This Script Was Made By JayMurda The Owner Of TeamEx.\n\n We Look Forward to creating more scripts for other games and autofarming Scripts for Blox Fruits.\n\n Make Sure to Stay Tuned For Our Roblox Executers Release which will be coming Soon.\n\n Thank Goodbye."
+Instance.new("UICorner", infoBox)
+Instance.new("UIPadding", infoBox).PaddingLeft = UDim.new(0, 8)
+
+-- COMBAT TABS
+createToggle("USE LOCK BUTTON", "CamLock_Active", combatPage, function(v) camBtn.Visible = v end)
+createToggle("LOCK PLAYERS", "CamLock_Player", combatPage)
+createToggle("LOCK NPCS", "CamLock_NPC", combatPage)
+createToggle("SILENT PLAYER", "SilentAim_Player", combatPage)
+createToggle("SILENT NPC", "SilentAim_NPC", combatPage)
+createToggle("FAST ATTACK", "FastAttack", combatPage)
+
+-- VISUAL TABS
+createToggle("PLAYER ESP", "PlayerESP", visualPage)
+createToggle("HITBOX EXPAND", "HitboxExpander", visualPage)
+
+-- MISC TABS
+createToggle("WALK ON WATER", "WalkOnWater", miscPage)
+local sBox = Instance.new("TextBox", miscPage)
+sBox.Size = UDim2.new(1, 0, 0, 35); sBox.PlaceholderText = "Input Speed"; sBox.Text = "100"
+sBox.BackgroundColor3 = Color3.fromRGB(25, 25, 25); sBox.TextColor3 = Color3.new(1,1,1)
+Instance.new("UICorner", sBox)
+sBox.FocusLost:Connect(function() _G.currentSpeed = tonumber(sBox.Text) or 100 end)
+
+togBtn.Activated:Connect(function() main.Visible = not main.Visible end)
+
+--------------------------------------------------
+-- FAST JUMP SYSTEM
+--------------------------------------------------
+local jumpButton = Instance.new("TextButton", sg)
+jumpButton.Name = "JumpButton"
+jumpButton.Size = UDim2.new(0, 65, 0, 65) 
+jumpButton.Position = UDim2.new(0.8, 0, 0.7, 0)
+jumpButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+jumpButton.Text = "Jump"
+jumpButton.TextColor3 = Color3.new(1, 1, 1)
+jumpButton.Font = Enum.Font.SourceSansBold
+jumpButton.TextSize = 18
+Instance.new("UICorner", jumpButton).CornerRadius = UDim.new(1, 0)
+
+local jumpPower = 240 
+local repeatSpeed = 0.01 
+local holdingJump = false
+local dragInput, dragStart, startPos
+
+local function doJump()
+    local char = player.Character
+    if char then
+        local root = char:FindFirstChild("HumanoidRootPart")
+        local hum = char:FindFirstChild("Humanoid")
+        if root and hum and hum.Health > 0 then
+            hum:ChangeState(Enum.HumanoidStateType.Jumping)
+            root.AssemblyLinearVelocity = Vector3.new(root.AssemblyLinearVelocity.X, jumpPower, root.AssemblyLinearVelocity.Z)
+        end
+    end
+end
+
+jumpButton.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+        holdingJump = true
+        task.spawn(function()
+            while holdingJump do doJump(); task.wait(repeatSpeed) end
+        end)
+        dragInput = input; dragStart = input.Position; startPos = jumpButton.Position
+    end
+end)
+
+UIS.InputChanged:Connect(function(input)
+    if input == dragInput and holdingJump then
+        local delta = input.Position - dragStart
+        jumpButton.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+
+jumpButton.InputEnded:Connect(function(input)
+    if input == dragInput then holdingJump = false; dragInput = nil end
+end)
+
+--------------------------------------------------
+-- CORE ENGINES
+--------------------------------------------------
+local waterPart = Instance.new("Part", workspace)
+waterPart.Anchored = true; waterPart.Transparency = 1; waterPart.Size = Vector3.new(100, 1, 100); waterPart.CanCollide = false
+
+camBtn.Activated:Connect(function() 
+    LockEnabled = not LockEnabled 
+    camBtn.BackgroundColor3 = LockEnabled and Color3.fromRGB(0, 255, 100) or Color3.fromRGB(40, 40, 40)
+end)
+
+RunService.RenderStepped:Connect(function()
+    local char = player.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if hrp then
+        if LockEnabled and CurrentTarget then
+            camera.CFrame = camera.CFrame:Lerp(CFrame.new(camera.CFrame.Position, CurrentTarget.Position), SMOOTHNESS)
+        end
+        if _G.currentSpeed > 16 and char.Humanoid.MoveDirection.Magnitude > 0 then
+            hrp.Velocity = Vector3.new(char.Humanoid.MoveDirection.X * _G.currentSpeed, hrp.Velocity.Y, char.Humanoid.MoveDirection.Z * _G.currentSpeed)
+        end
+        if _G.WalkOnWater then
+            waterPart.CFrame = CFrame.new(hrp.Position.X, 0, hrp.Position.Z); waterPart.CanCollide = true
+        else waterPart.CanCollide = false end
+    end
+end)
+
+task.spawn(function()
+    while task.wait(0.1) do
+        local best, shortest = nil, 3000 -- UPDATED: Changed from 2000 to 3000
+        local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+        if root then
+            local potential = {}
+            for _, p in pairs(Players:GetPlayers()) do if p ~= player and p.Character then table.insert(potential, p.Character) end end
+            if workspace:FindFirstChild("Enemies") then for _, e in pairs(workspace.Enemies:GetChildren()) do table.insert(potential, e) end end
+            for _, char in pairs(potential) do
+                local hPart = char:FindFirstChild("HumanoidRootPart")
+                if hPart and char:FindFirstChild("Humanoid") and char.Humanoid.Health > 0 then
+                    local mag = (hPart.Position - root.Position).Magnitude
+                    if mag < shortest then
+                        local isNPC = not Players:GetPlayerFromCharacter(char)
+                        if (isNPC and (_G.SilentAim_NPC or (LockEnabled and _G.CamLock_NPC))) or (not isNPC and (_G.SilentAim_Player or (LockEnabled and _G.CamLock_Player))) then
+                            shortest = mag; best = hPart
+                        end
+                    end
+                end
+            end
+            CurrentTarget = best
+        end
+    end
+end)
+
+task.spawn(function()
+    while task.wait() do
+        if _G.FastAttack and player.Character then ReplicatedStorage.Remotes.CommF_:InvokeServer("Attack", {}) end
+    end
+end)
+
+local old; old = hookmetamethod(game, "__namecall", function(self, ...)
+    local method = getnamecallmethod()
+    local args = {...}
+    if not checkcaller() and (method == "FireServer" or method == "InvokeServer") and CurrentTarget then
+        local pred = CurrentTarget.Position + (CurrentTarget.Velocity * PREDICTION_STRENGTH)
+        for i, v in pairs(args) do
+            if typeof(v) == "Vector3" then args[i] = pred
+            elseif typeof(v) == "CFrame" then args[i] = CFrame.new(v.Position, pred) end
+        end
+    end
+    return old(self, unpack(args))
+end)
+
+RunService.Heartbeat:Connect(function()
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= player and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+            local hrp = p.Character.HumanoidRootPart
+            local bb = hrp:FindFirstChild("TeamEx_BB")
+            if _G.PlayerESP then
+                if not bb then
+                    bb = Instance.new("BillboardGui", hrp); bb.Name = "TeamEx_BB"; bb.Size = UDim2.new(0, 100, 0, 20); bb.AlwaysOnTop = true; bb.ExtentsOffset = Vector3.new(0, 3, 0)
+                    local tl = Instance.new("TextLabel", bb); tl.Size = UDim2.new(1, 0, 1, 0); tl.BackgroundTransparency = 1; tl.TextColor3 = Color3.new(1, 1, 1); tl.TextSize = 10; tl.Font = Enum.Font.GothamBold
+                end
+                bb.Enabled = true; bb.TextLabel.Text = p.Name .. " [" .. math.floor((hrp.Position - player.Character.HumanoidRootPart.Position).Magnitude) .. "m]"
+            elseif bb then bb.Enabled = false end
+            if _G.HitboxExpander then hrp.Size = Vector3.new(25, 25, 25); hrp.Transparency = 1; hrp.CanCollide = false end
+        end
+    end
+end)
+
+local function drag(gui)
+    local d, s, sp; gui.InputBegan:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then d = true; s = i.Position; sp = gui.Position end end)
+    gui.InputChanged:Connect(function(i) if d and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then local delta = i.Position - s; gui.Position = UDim2.new(sp.X.Scale, sp.X.Offset + delta.X, sp.Y.Scale, sp.Y.Offset + delta.Y) end end)
+    gui.InputEnded:Connect(function() d = false end)
+end
+drag(main); drag(togBtn); drag(camBtn); drag(jumpButton)
