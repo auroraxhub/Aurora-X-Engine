@@ -1,0 +1,643 @@
+-- ══════════════════════════════════════════════════════════════
+--  SACRED MACRO  |  Spectral Series
+--  Constructor de macros para Blox Fruits
+-- ══════════════════════════════════════════════════════════════
+
+local Players      = game:GetService("Players")
+local VIM          = game:GetService("VirtualInputManager")
+local TweenService = game:GetService("TweenService")
+local HttpService  = game:GetService("HttpService")
+
+local lp        = Players.LocalPlayer
+local SAVE_FILE = "sacred_macros.json"
+
+-- ── Paleta ────────────────────────────────────────────────────
+local C = {
+    bg     = Color3.fromRGB(8,   10,  20),
+    panel  = Color3.fromRGB(12,  14,  26),
+    card   = Color3.fromRGB(15,  17,  32),
+    border = Color3.fromRGB(35,  40,  72),
+    accent = Color3.fromRGB(0,   190, 240),
+    green  = Color3.fromRGB(45,  210, 110),
+    red    = Color3.fromRGB(215, 60,  60),
+    text   = Color3.fromRGB(220, 225, 245),
+    muted  = Color3.fromRGB(90,  100, 135),
+    purple = Color3.fromRGB(130, 80,  220),
+}
+
+-- ── Datos ─────────────────────────────────────────────────────
+local macros      = {}
+local activeMacro = nil
+local isRunning   = false
+
+local WEAPONS = {
+    Melee = {"Z","X","C"},
+    Fruit  = {"Z","X","C","V","F"},
+    Sword  = {"Z","X"},
+    Gun    = {"Z","X"},
+}
+
+-- ── Guardar / Cargar ──────────────────────────────────────────
+local function saveMacros()
+    pcall(function() writefile(SAVE_FILE, HttpService:JSONEncode(macros)) end)
+end
+
+local function loadMacros()
+    pcall(function()
+        if isfile and isfile(SAVE_FILE) then
+            local d = HttpService:JSONDecode(readfile(SAVE_FILE))
+            if type(d) == "table" then macros = d end
+        end
+    end)
+end
+
+loadMacros()
+
+-- ── Input ─────────────────────────────────────────────────────
+local function pressKey(keyStr, holdTime)
+    pcall(function()
+        local char = lp.Character
+        local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+        VIM:SendKeyEvent(true,  Enum.KeyCode[keyStr], false, hrp)
+        task.wait(holdTime or 0.15)
+        VIM:SendKeyEvent(false, Enum.KeyCode[keyStr], false, hrp)
+    end)
+end
+
+local function equipWeapon(wType)
+    if wType == "Fruit" then return end
+    pcall(function()
+        local char = lp.Character
+        if not char then return end
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if not hum then return end
+        for _, tool in ipairs(lp.Backpack:GetChildren()) do
+            if tool:IsA("Tool") then
+                local tt = (tool.ToolTip or ""):lower()
+                if wType == "Melee" and (tt:find("melee") or tt:find("fighting") or tt:find("godhuman") or tt:find("superhuman") or tt:find("buso")) then
+                    hum:EquipTool(tool); return
+                elseif wType == "Sword" and (tt:find("sword") or tt:find("saber") or tt:find("katana") or tt:find("trident") or tt:find("cutlass")) then
+                    hum:EquipTool(tool); return
+                elseif wType == "Gun" and (tt:find("gun") or tt:find("rifle") or tt:find("bazooka") or tt:find("musket") or tt:find("cannon")) then
+                    hum:EquipTool(tool); return
+                end
+            end
+        end
+    end)
+end
+
+local function runMacro(macro)
+    if isRunning then return end
+    isRunning = true
+    task.spawn(function()
+        for _, step in ipairs(macro.steps) do
+            if not isRunning then break end
+            pcall(function()
+                equipWeapon(step.weapon)
+                task.wait(step.delay or 0)
+                pressKey(step.skill, step.hold or 0.15)
+            end)
+        end
+        isRunning = false
+        _G.SacredMacroUpdateTrigger()
+    end)
+end
+
+-- ════════════════════════════════════════════════════════════
+--  LIMPIAR GUIs VIEJOS
+-- ════════════════════════════════════════════════════════════
+for _, p in ipairs({lp.PlayerGui, game:GetService("CoreGui")}) do
+    pcall(function()
+        local old = p:FindFirstChild("SacredMacroUI")
+        if old then old:Destroy() end
+    end)
+end
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name            = "SacredMacroUI"
+ScreenGui.ResetOnSpawn    = false
+ScreenGui.ZIndexBehavior  = Enum.ZIndexBehavior.Sibling
+ScreenGui.DisplayOrder    = 998
+local ok = pcall(function() ScreenGui.Parent = game:GetService("CoreGui") end)
+if not ok then ScreenGui.Parent = lp:WaitForChild("PlayerGui") end
+
+-- ── Helpers ───────────────────────────────────────────────────
+local function corner(p, r) Instance.new("UICorner", p).CornerRadius = UDim.new(0, r or 8) end
+local function stroke(p, col, thick, trans)
+    local s = Instance.new("UIStroke", p)
+    s.Color = col or C.border; s.Thickness = thick or 1; s.Transparency = trans or 0
+    return s
+end
+local function mkFrame(parent, size, pos, bg, trans)
+    local f = Instance.new("Frame", parent)
+    f.Size = size; f.Position = pos or UDim2.new(0,0,0,0)
+    f.BackgroundColor3 = bg or C.card; f.BackgroundTransparency = trans or 0
+    f.BorderSizePixel = 0; corner(f); return f
+end
+local function mkLabel(parent, size, pos, text, font, ts, color, xAlign)
+    local l = Instance.new("TextLabel", parent)
+    l.Size = size; l.Position = pos or UDim2.new(0,0,0,0)
+    l.BackgroundTransparency = 1; l.Text = text or ""
+    l.Font = font or Enum.Font.GothamBold; l.TextSize = ts or 12
+    l.TextColor3 = color or C.text
+    l.TextXAlignment = xAlign or Enum.TextXAlignment.Center
+    l.TextTruncate = Enum.TextTruncate.AtEnd; return l
+end
+local function mkBtn(parent, size, pos, text, bg, tc, ts)
+    local b = Instance.new("TextButton", parent)
+    b.Size = size; b.Position = pos or UDim2.new(0,0,0,0)
+    b.BackgroundColor3 = bg or C.accent; b.BorderSizePixel = 0
+    b.Text = text or ""; b.Font = Enum.Font.GothamBold
+    b.TextSize = ts or 11; b.TextColor3 = tc or Color3.new(1,1,1)
+    b.AutoButtonColor = false; corner(b); return b
+end
+local function mkScroll(parent, size, pos)
+    local s = Instance.new("ScrollingFrame", parent)
+    s.Size = size; s.Position = pos or UDim2.new(0,0,0,0)
+    s.BackgroundTransparency = 1; s.BorderSizePixel = 0
+    s.ScrollBarThickness = 3; s.ScrollBarImageColor3 = C.accent
+    s.CanvasSize = UDim2.new(0,0,0,0); s.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    local layout = Instance.new("UIListLayout", s)
+    layout.Padding = UDim.new(0,4); layout.SortOrder = Enum.SortOrder.LayoutOrder
+    return s
+end
+local function mkTextBox(parent, size, pos, placeholder)
+    local b = Instance.new("TextBox", parent)
+    b.Size = size; b.Position = pos or UDim2.new(0,0,0,0)
+    b.BackgroundColor3 = C.card; b.BorderSizePixel = 0
+    b.PlaceholderText = placeholder or ""; b.Text = ""
+    b.Font = Enum.Font.GothamBold; b.TextSize = 12
+    b.TextColor3 = C.text; b.ClearTextOnFocus = false
+    corner(b); stroke(b, C.border, 1, 0.3)
+    local pad = Instance.new("UIPadding", b); pad.PaddingLeft = UDim.new(0,8)
+    return b
+end
+
+-- ════════════════════════════════════════════════════════════
+--  VENTANA PRINCIPAL 460 × 300
+-- ════════════════════════════════════════════════════════════
+local Main = Instance.new("Frame", ScreenGui)
+Main.Name = "Main"; Main.Size = UDim2.new(0,460,0,300)
+Main.Position = UDim2.new(0,55,0,20); Main.BackgroundColor3 = C.bg
+Main.BorderSizePixel = 0; Main.Active = true; Main.Draggable = true
+corner(Main, 10)
+local mainStroke = stroke(Main, C.accent, 1, 0.5)
+
+-- Glow animado
+task.spawn(function()
+    local t = 0
+    while true do
+        task.wait(0.05); t += 0.05
+        if mainStroke and mainStroke.Parent then
+            mainStroke.Transparency = 0.35 + 0.3 * math.abs(math.sin(t * 0.8))
+        end
+    end
+end)
+
+-- Header
+local header = mkFrame(Main, UDim2.new(1,0,0,32), UDim2.new(0,0,0,0), C.panel)
+local hFix   = Instance.new("Frame", header)
+hFix.Size = UDim2.new(1,0,0,10); hFix.Position = UDim2.new(0,0,1,-10)
+hFix.BackgroundColor3 = C.panel; hFix.BorderSizePixel = 0
+stroke(header, C.border, 1, 0.3)
+
+local dot = Instance.new("Frame", header)
+dot.Size = UDim2.new(0,7,0,7); dot.Position = UDim2.new(0,10,0.5,-3.5)
+dot.BackgroundColor3 = C.accent; dot.BorderSizePixel = 0
+Instance.new("UICorner", dot).CornerRadius = UDim.new(1,0)
+
+mkLabel(header, UDim2.new(0,200,1,0), UDim2.new(0,22,0,0),
+    "SACRED MACRO", Enum.Font.GothamBlack, 13, C.text, Enum.TextXAlignment.Left)
+
+-- Botón minimizar (−)
+local minBtn = mkBtn(header, UDim2.new(0,24,0,20), UDim2.new(1,-30,0.5,-10),
+    "−", Color3.fromRGB(80,20,20), Color3.new(1,1,1), 14)
+stroke(minBtn, Color3.fromRGB(200,70,70), 1, 0.4)
+
+-- Mini bar (aparece al minimizar)
+local miniBar = Instance.new("Frame", ScreenGui)
+miniBar.Name = "MiniBar"; miniBar.Size = UDim2.new(0,180,0,28)
+miniBar.Position = UDim2.new(0,55,0,20); miniBar.BackgroundColor3 = C.panel
+miniBar.BorderSizePixel = 0; miniBar.Active = true; miniBar.Draggable = true
+miniBar.Visible = false
+corner(miniBar, 14); stroke(miniBar, C.accent, 1, 0.4)
+
+local miniDot = Instance.new("Frame", miniBar)
+miniDot.Size = UDim2.new(0,6,0,6); miniDot.Position = UDim2.new(0,8,0.5,-3)
+miniDot.BackgroundColor3 = C.accent; miniDot.BorderSizePixel = 0
+Instance.new("UICorner", miniDot).CornerRadius = UDim.new(1,0)
+
+mkLabel(miniBar, UDim2.new(1,-48,1,0), UDim2.new(0,18,0,0),
+    "SACRED MACRO", Enum.Font.GothamBlack, 10, C.muted, Enum.TextXAlignment.Left)
+
+local miniExpandBtn = mkBtn(miniBar, UDim2.new(0,28,0,20), UDim2.new(1,-32,0.5,-10),
+    "+", Color3.fromRGB(18,50,80), C.accent, 13)
+
+-- Animaciones
+local function openMain()
+    miniBar.Visible = false
+    Main.Visible    = true
+    Main.Size       = UDim2.new(0,460,0,0)
+    TweenService:Create(Main, TweenInfo.new(0.2, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
+        {Size = UDim2.new(0,460,0,300)}):Play()
+end
+local function closeMain()
+    TweenService:Create(Main, TweenInfo.new(0.15, Enum.EasingStyle.Quint, Enum.EasingDirection.In),
+        {Size = UDim2.new(0,460,0,0)}):Play()
+    task.wait(0.15)
+    Main.Visible    = false
+    Main.Size       = UDim2.new(0,460,0,300)
+    miniBar.Visible = true
+end
+
+minBtn.MouseButton1Click:Connect(function() task.spawn(closeMain) end)
+miniExpandBtn.MouseButton1Click:Connect(function() openMain() end)
+miniBar.InputBegan:Connect(function(inp)
+    if inp.UserInputType == Enum.UserInputType.Touch
+    or inp.UserInputType == Enum.UserInputType.MouseButton1 then
+        openMain()
+    end
+end)
+
+-- ── Columna izquierda: lista de macros (168px) ────────────────
+local leftCol = mkFrame(Main, UDim2.new(0,168,1,-36), UDim2.new(0,4,0,36), C.panel, 0.15)
+stroke(leftCol, C.border, 1, 0.4)
+
+mkLabel(leftCol, UDim2.new(1,0,0,14), UDim2.new(0,0,0,4),
+    "MIS MACROS", Enum.Font.GothamBlack, 9, C.muted)
+
+local macroScroll = mkScroll(leftCol, UDim2.new(1,-8,1,-52), UDim2.new(0,4,0,20))
+
+local newMacroBtn = mkBtn(leftCol, UDim2.new(1,-8,0,24), UDim2.new(0,4,1,-28),
+    "+ NUEVA MACRO", C.accent, Color3.fromRGB(8,10,20), 10)
+stroke(newMacroBtn, C.accent, 1, 0.4)
+
+-- ── Columna derecha: editor (resto del ancho) ─────────────────
+local rightCol = mkFrame(Main, UDim2.new(1,-176,1,-36), UDim2.new(0,176,0,36), C.bg, 0.3)
+stroke(rightCol, C.border, 1, 0.6)
+
+-- Pantalla vacía
+local emptyScreen = mkFrame(rightCol, UDim2.new(1,0,1,0), UDim2.new(0,0,0,0), C.bg, 1)
+mkLabel(emptyScreen, UDim2.new(1,0,0,18), UDim2.new(0,0,0.42,0),
+    "Selecciona o crea una macro", Enum.Font.GothamBold, 11, C.muted)
+mkLabel(emptyScreen, UDim2.new(1,0,0,14), UDim2.new(0,0,0.56,0),
+    "Usa el panel izquierdo", Enum.Font.Gotham, 9, Color3.fromRGB(55,60,85))
+
+-- Pantalla editor
+local editorScreen = mkFrame(rightCol, UDim2.new(1,0,1,0), UDim2.new(0,0,0,0), C.bg, 1)
+editorScreen.Visible = false
+
+-- Campo nombre macro
+local nameBox = mkTextBox(editorScreen, UDim2.new(1,-8,0,26), UDim2.new(0,4,0,4), "Nombre de la macro...")
+nameBox.TextSize = 11
+
+-- Cabecera de pasos
+local stepsHeader = mkFrame(editorScreen, UDim2.new(1,-8,0,14), UDim2.new(0,4,0,34), C.panel, 0)
+stroke(stepsHeader, C.border, 1, 0.6)
+mkLabel(stepsHeader, UDim2.new(0.4,0,1,0), UDim2.new(0,4,0,0),   "ARMA / SKILL", Enum.Font.GothamBold, 7, C.muted, Enum.TextXAlignment.Left)
+mkLabel(stepsHeader, UDim2.new(0.3,0,1,0), UDim2.new(0.4,0,0,0), "ESPERA",       Enum.Font.GothamBold, 7, C.muted)
+mkLabel(stepsHeader, UDim2.new(0.3,0,1,0), UDim2.new(0.7,0,0,0), "HOLD",         Enum.Font.GothamBold, 7, C.muted)
+
+-- Scroll de pasos
+local stepsScroll = mkScroll(editorScreen, UDim2.new(1,-8,1,-84), UDim2.new(0,4,0,52))
+
+-- Botones inferiores
+local addStepBtn = mkBtn(editorScreen, UDim2.new(0.5,-6,0,24), UDim2.new(0,4,1,-28),
+    "+ PASO", Color3.fromRGB(18,45,80), C.accent, 10)
+stroke(addStepBtn, C.accent, 1, 0.4)
+
+local saveBtn = mkBtn(editorScreen, UDim2.new(0.5,-6,0,24), UDim2.new(0.5,2,1,-28),
+    "GUARDAR", Color3.fromRGB(15,50,28), C.green, 10)
+stroke(saveBtn, C.green, 1, 0.4)
+
+-- ══════════════════════════════════════════════════════════════
+--  MODAL: CONFIGURAR PASO
+-- ══════════════════════════════════════════════════════════════
+local stepModal = mkFrame(rightCol, UDim2.new(1,0,1,0), UDim2.new(0,0,0,0), Color3.fromRGB(7,9,19), 0)
+stepModal.Visible = false; stepModal.ZIndex = 20
+stroke(stepModal, C.accent, 1, 0.3)
+
+mkLabel(stepModal, UDim2.new(1,0,0,18), UDim2.new(0,0,0,8),
+    "CONFIGURAR PASO", Enum.Font.GothamBlack, 11, C.accent)
+
+-- Selector de arma
+mkLabel(stepModal, UDim2.new(1,-16,0,11), UDim2.new(0,8,0,30),
+    "ARMA", Enum.Font.GothamBold, 8, C.muted, Enum.TextXAlignment.Left)
+
+local selectedWeapon = "Melee"
+local selectedSkill  = "Z"
+local weaponBtns = {}
+local skillBtns  = {}
+
+local weaponRow = Instance.new("Frame", stepModal)
+weaponRow.Size = UDim2.new(1,-16,0,26); weaponRow.Position = UDim2.new(0,8,0,43)
+weaponRow.BackgroundTransparency = 1; weaponRow.BorderSizePixel = 0
+
+local weaponList = {"Melee","Fruit","Sword","Gun"}
+for i, wname in ipairs(weaponList) do
+    local w    = 1 / #weaponList
+    local wb   = mkBtn(weaponRow, UDim2.new(w,-3,1,0),
+        UDim2.new((i-1)*w, i > 1 and 3 or 0, 0, 0),
+        wname, C.card, C.muted, 10)
+    stroke(wb, C.border, 1, 0.5)
+    weaponBtns[wname] = wb
+end
+
+-- Selector de habilidad
+mkLabel(stepModal, UDim2.new(1,-16,0,11), UDim2.new(0,8,0,75),
+    "HABILIDAD", Enum.Font.GothamBold, 8, C.muted, Enum.TextXAlignment.Left)
+
+local skillRow = Instance.new("Frame", stepModal)
+skillRow.Size = UDim2.new(1,-16,0,26); skillRow.Position = UDim2.new(0,8,0,88)
+skillRow.BackgroundTransparency = 1; skillRow.BorderSizePixel = 0
+
+local function updateSkillButtons()
+    for _, ch in ipairs(skillRow:GetChildren()) do ch:Destroy() end
+    skillBtns = {}
+    local skills = WEAPONS[selectedWeapon] or {}
+    local w = 1 / #skills
+    for i, sk in ipairs(skills) do
+        local sb = mkBtn(skillRow, UDim2.new(w,-3,1,0),
+            UDim2.new((i-1)*w, i > 1 and 3 or 0, 0, 0),
+            sk, C.card, C.muted, 13)
+        stroke(sb, C.border, 1, 0.5)
+        skillBtns[sk] = sb
+        sb.MouseButton1Click:Connect(function()
+            selectedSkill = sk
+            for k, b in pairs(skillBtns) do
+                b.BackgroundColor3 = k == sk and C.accent or C.card
+                b.TextColor3       = k == sk and Color3.fromRGB(8,10,20) or C.muted
+            end
+        end)
+    end
+    if not skillBtns[selectedSkill] then selectedSkill = skills[1] or "Z" end
+    if skillBtns[selectedSkill] then
+        skillBtns[selectedSkill].BackgroundColor3 = C.accent
+        skillBtns[selectedSkill].TextColor3       = Color3.fromRGB(8,10,20)
+    end
+end
+
+for wname, wb in pairs(weaponBtns) do
+    wb.MouseButton1Click:Connect(function()
+        selectedWeapon = wname
+        selectedSkill  = "Z"
+        for k, b in pairs(weaponBtns) do
+            b.BackgroundColor3 = k == wname and C.purple or C.card
+            b.TextColor3       = k == wname and Color3.new(1,1,1) or C.muted
+        end
+        updateSkillButtons()
+    end)
+end
+weaponBtns["Melee"].BackgroundColor3 = C.purple
+weaponBtns["Melee"].TextColor3       = Color3.new(1,1,1)
+updateSkillButtons()
+
+-- Delay y Hold
+mkLabel(stepModal, UDim2.new(0.5,-8,0,11), UDim2.new(0,8,0,122),
+    "ESPERA ANTES (s)", Enum.Font.GothamBold, 8, C.muted, Enum.TextXAlignment.Left)
+mkLabel(stepModal, UDim2.new(0.5,-8,0,11), UDim2.new(0.5,4,0,122),
+    "HOLD (s)", Enum.Font.GothamBold, 8, C.muted, Enum.TextXAlignment.Left)
+
+local delayBox = mkTextBox(stepModal, UDim2.new(0.5,-12,0,26), UDim2.new(0,8,0,135), "0.5")
+delayBox.Text = "0.5"; delayBox.TextSize = 13
+
+local holdBox  = mkTextBox(stepModal, UDim2.new(0.5,-12,0,26), UDim2.new(0.5,4,0,135), "0.15")
+holdBox.Text   = "0.15"; holdBox.TextSize = 13
+
+-- Botones confirmar / cancelar
+local confirmBtn = mkBtn(stepModal, UDim2.new(0.5,-8,0,26), UDim2.new(0,8,0,170),
+    "CONFIRMAR", Color3.fromRGB(15,50,28), C.green, 11)
+stroke(confirmBtn, C.green, 1, 0.4)
+
+local cancelBtn  = mkBtn(stepModal, UDim2.new(0.5,-8,0,26), UDim2.new(0.5,0,0,170),
+    "CANCELAR", Color3.fromRGB(65,15,15), C.red, 11)
+stroke(cancelBtn, C.red, 1, 0.4)
+
+-- ══════════════════════════════════════════════════════════════
+--  TRIGGER FLOTANTE
+-- ══════════════════════════════════════════════════════════════
+local triggerBtn = Instance.new("TextButton", ScreenGui)
+triggerBtn.Size = UDim2.new(0,90,0,34); triggerBtn.Position = UDim2.new(0.5,-45,0,10)
+triggerBtn.BackgroundColor3 = Color3.fromRGB(10,12,24); triggerBtn.BorderSizePixel = 0
+triggerBtn.Text = "EJECUTAR"; triggerBtn.Font = Enum.Font.GothamBlack
+triggerBtn.TextSize = 11; triggerBtn.TextColor3 = C.accent
+triggerBtn.Active = true; triggerBtn.Draggable = true
+triggerBtn.Visible = false; triggerBtn.AutoButtonColor = false
+corner(triggerBtn, 17)
+local trigStroke = stroke(triggerBtn, C.accent, 1, 0.3)
+
+_G.SacredMacroUpdateTrigger = function()
+    if isRunning then
+        triggerBtn.Text = "DETENER"
+        triggerBtn.TextColor3 = C.red
+        trigStroke.Color = C.red
+    else
+        local n = activeMacro and macros[activeMacro] and macros[activeMacro].name or ""
+        triggerBtn.Text = #n > 0 and n:sub(1,10) or "EJECUTAR"
+        triggerBtn.TextColor3 = C.accent
+        trigStroke.Color = C.accent
+    end
+end
+
+task.spawn(function()
+    local t = 0
+    while true do
+        task.wait(0.06); t += 0.06
+        if trigStroke and trigStroke.Parent then
+            trigStroke.Transparency = 0.2 + 0.45 * math.abs(math.sin(t))
+        end
+    end
+end)
+
+triggerBtn.MouseButton1Click:Connect(function()
+    if isRunning then
+        isRunning = false
+    else
+        if activeMacro and macros[activeMacro] then
+            runMacro(macros[activeMacro])
+        end
+    end
+    _G.SacredMacroUpdateTrigger()
+end)
+
+-- ══════════════════════════════════════════════════════════════
+--  LÓGICA EDITOR
+-- ══════════════════════════════════════════════════════════════
+local currentEditMacro = nil
+local editingStepIdx   = nil
+
+local function buildStepsUI()
+    for _, ch in ipairs(stepsScroll:GetChildren()) do
+        if ch:IsA("Frame") then ch:Destroy() end
+    end
+    if not currentEditMacro then return end
+    for i, step in ipairs(currentEditMacro.steps) do
+        local idx = i
+        local row = mkFrame(stepsScroll, UDim2.new(1,-4,0,34), UDim2.new(0,2,0,0), C.card)
+        row.LayoutOrder = i; stroke(row, C.border, 1, 0.55)
+
+        mkLabel(row, UDim2.new(0,18,1,0), UDim2.new(0,4,0,0),
+            tostring(i), Enum.Font.GothamBlack, 10, C.muted)
+        mkLabel(row, UDim2.new(0,60,0.5,0), UDim2.new(0,24,0,0),
+            step.weapon, Enum.Font.GothamBold, 11, C.purple, Enum.TextXAlignment.Left)
+        mkLabel(row, UDim2.new(0,20,0.5,0), UDim2.new(0,90,0,0),
+            step.skill, Enum.Font.GothamBlack, 14, C.accent)
+        mkLabel(row, UDim2.new(0,100,0.5,0), UDim2.new(0,24,0.5,0),
+            step.delay .. "s espera  " .. step.hold .. "s hold",
+            Enum.Font.Gotham, 8, C.muted, Enum.TextXAlignment.Left)
+
+        local editBtn = mkBtn(row, UDim2.new(0,26,0,22), UDim2.new(1,-58,0.5,-11),
+            "e", Color3.fromRGB(18,40,70), C.accent, 11)
+        editBtn.MouseButton1Click:Connect(function()
+            editingStepIdx = idx
+            local s = currentEditMacro.steps[idx]
+            selectedWeapon = s.weapon; selectedSkill = s.skill
+            delayBox.Text  = tostring(s.delay); holdBox.Text = tostring(s.hold)
+            for k, b in pairs(weaponBtns) do
+                b.BackgroundColor3 = k == selectedWeapon and C.purple or C.card
+                b.TextColor3 = k == selectedWeapon and Color3.new(1,1,1) or C.muted
+            end
+            updateSkillButtons()
+            if skillBtns[selectedSkill] then
+                skillBtns[selectedSkill].BackgroundColor3 = C.accent
+                skillBtns[selectedSkill].TextColor3 = Color3.fromRGB(8,10,20)
+            end
+            stepModal.Visible = true
+        end)
+
+        local delBtn = mkBtn(row, UDim2.new(0,26,0,22), UDim2.new(1,-28,0.5,-11),
+            "x", Color3.fromRGB(65,15,15), C.red, 11)
+        delBtn.MouseButton1Click:Connect(function()
+            table.remove(currentEditMacro.steps, idx)
+            buildStepsUI()
+        end)
+    end
+end
+
+addStepBtn.MouseButton1Click:Connect(function()
+    editingStepIdx = nil
+    selectedWeapon = "Melee"; selectedSkill = "Z"
+    delayBox.Text  = "0.5"; holdBox.Text = "0.15"
+    for k, b in pairs(weaponBtns) do
+        b.BackgroundColor3 = k == "Melee" and C.purple or C.card
+        b.TextColor3       = k == "Melee" and Color3.new(1,1,1) or C.muted
+    end
+    updateSkillButtons()
+    stepModal.Visible = true
+end)
+
+confirmBtn.MouseButton1Click:Connect(function()
+    local delay = tonumber(delayBox.Text) or 0.5
+    local hold  = tonumber(holdBox.Text)  or 0.15
+    local step  = {weapon=selectedWeapon, skill=selectedSkill, delay=delay, hold=hold}
+    if editingStepIdx then
+        currentEditMacro.steps[editingStepIdx] = step
+    else
+        table.insert(currentEditMacro.steps, step)
+    end
+    stepModal.Visible = false
+    buildStepsUI()
+end)
+
+cancelBtn.MouseButton1Click:Connect(function() stepModal.Visible = false end)
+
+saveBtn.MouseButton1Click:Connect(function()
+    if not currentEditMacro then return end
+    local name = nameBox.Text ~= "" and nameBox.Text or ("Macro " .. (#macros+1))
+    currentEditMacro.name = name
+    if currentEditMacro._idx then
+        macros[currentEditMacro._idx] = {name=name, steps=currentEditMacro.steps}
+    else
+        table.insert(macros, {name=name, steps=currentEditMacro.steps})
+    end
+    saveMacros()
+    _G.SacredMacroRebuild()
+    editorScreen.Visible = false
+    emptyScreen.Visible  = true
+end)
+
+-- ══════════════════════════════════════════════════════════════
+--  LISTA DE MACROS
+-- ══════════════════════════════════════════════════════════════
+local function rebuildMacroList()
+    for _, ch in ipairs(macroScroll:GetChildren()) do
+        if ch:IsA("Frame") then ch:Destroy() end
+    end
+    for i, macro in ipairs(macros) do
+        local idx    = i
+        local isAct  = activeMacro == i
+        local row    = mkFrame(macroScroll, UDim2.new(1,-4,0,44), UDim2.new(0,2,0,0),
+            isAct and Color3.fromRGB(12,18,34) or C.card)
+        row.LayoutOrder = i
+        stroke(row, isAct and C.accent or C.border, 1, isAct and 0.25 or 0.6)
+
+        mkLabel(row, UDim2.new(1,-56,0.52,0), UDim2.new(0,8,0,2),
+            macro.name, Enum.Font.GothamBold, 12, isAct and C.text or C.muted,
+            Enum.TextXAlignment.Left)
+        mkLabel(row, UDim2.new(1,-56,0.42,0), UDim2.new(0,8,0.54,0),
+            #macro.steps .. " pasos", Enum.Font.Gotham, 9, C.muted, Enum.TextXAlignment.Left)
+
+        -- Activar / Desactivar (toggle)
+        local actBtn = mkBtn(row, UDim2.new(0,22,0,18), UDim2.new(1,-50,0.5,-9),
+            isAct and "■" or "▶", isAct and C.red or C.accent, Color3.new(1,1,1), 10)
+        actBtn.MouseButton1Click:Connect(function()
+            if activeMacro == idx then
+                -- Desactivar
+                activeMacro = nil
+                triggerBtn.Visible = false
+                isRunning = false
+            else
+                -- Activar
+                activeMacro = idx
+                triggerBtn.Visible = true
+            end
+            _G.SacredMacroUpdateTrigger()
+            rebuildMacroList()
+        end)
+
+        -- Editar
+        local editBtn = mkBtn(row, UDim2.new(0,22,0,18), UDim2.new(1,-26,0.5,-9),
+            "✎", C.card, C.muted, 11)
+        editBtn.MouseButton1Click:Connect(function()
+            currentEditMacro = {name=macro.name, steps={}, _idx=idx}
+            for _, s in ipairs(macro.steps) do
+                table.insert(currentEditMacro.steps, {weapon=s.weapon, skill=s.skill, delay=s.delay, hold=s.hold})
+            end
+            nameBox.Text = macro.name
+            buildStepsUI()
+            emptyScreen.Visible  = false
+            editorScreen.Visible = true
+            stepModal.Visible    = false
+        end)
+
+        -- Borrar
+        local delBtn = mkBtn(row, UDim2.new(0,16,0,16), UDim2.new(1,-186,0.5,-8),
+            "x", Color3.fromRGB(60,18,18), C.red, 9)
+        delBtn.MouseButton1Click:Connect(function()
+            table.remove(macros, idx)
+            if activeMacro == idx then
+                activeMacro = nil; triggerBtn.Visible = false
+            elseif activeMacro and activeMacro > idx then
+                activeMacro -= 1
+            end
+            saveMacros(); rebuildMacroList()
+            emptyScreen.Visible  = true
+            editorScreen.Visible = false
+        end)
+    end
+end
+
+_G.SacredMacroRebuild = rebuildMacroList
+
+newMacroBtn.MouseButton1Click:Connect(function()
+    currentEditMacro = {name="", steps={}, _idx=nil}
+    nameBox.Text = ""; buildStepsUI()
+    emptyScreen.Visible  = false
+    editorScreen.Visible = true
+    stepModal.Visible    = false
+end)
+
+-- Inicializar
+rebuildMacroList()
+print("[Sacred Macro] Cargado — " .. #macros .. " macros guardadas")
